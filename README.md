@@ -1,0 +1,2 @@
+# ttyseq
+Sequencer for terminal
