@@ -73,7 +73,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 |                      |                              |
 |              +-------v--------+                     |
 |              |  Projet File   |                     |
-|              |  (.stage/.toml)|                     |
+|              |  (.json/.yaml) |                     |
 |              +-------+--------+                     |
 +----------------------|------------------------------+
                        |
