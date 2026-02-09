@@ -102,7 +102,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 |                                                     |
 |  +---------------------------------------+          |
 |  |    Input Controllers                 |          |
-|  |  • Terminal (Tracker/TUI)            |          |
+|  |  • Terminal (TUI)                    |          |
 |  |  • MIDI Controllers                  |          |
 |  |  • Monome Grid                       |          |
 |  |  • OSC Devices                       |          |
