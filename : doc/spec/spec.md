@@ -50,7 +50,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 ### 2.2 Objectifs principaux
 1. Lecture synchronisée de pistes audio et MIDI/CV
 2. Latence audio < 10ms
-3. Interface terminal réactive
+3. Interface terminal (TUI) fournissant un affichage synchrone
 4. Support de contrôleurs externes (Grid, MIDI, OSC)
 5. Gestion flexible du routing de sorties
 6. Stabilité en conditions live
