@@ -52,7 +52,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 2. Latence audio < 10ms
 3. Interface terminal (TUI) fournissant un affichage synchrone
 4. Déclenchement et synchronisation via des messages standards (MIDI, DIN sync, OSC, Grid, 1-24 PPQ...) rendant possible l'utilisation de contrôleurs externes
-5. Gestion flexible du routing de sorties
+5. Gestion flexible du routing de sorties MIDI, OSC, Grid, Audio...
 6. Stabilité en conditions live
 
 ---
