@@ -179,7 +179,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 #### Organisation 
 - Scènes/clips (inspiration Ableton) (à retravailler : plutôt que de s'inspirer d'Ableton comme le suggère Claude, on pourrait penser à une autre structuration mieux pensée pour le live)
 - Groupes de pistes
-- Mutliplication temporelle (x2, /2, etc.)
+- Multiplication temporelle (x2, /2, etc.)
 - Boucles par piste ou globales
 
 #### Routing Audio Flexible ⭐ (nouveau)
