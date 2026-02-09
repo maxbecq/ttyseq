@@ -110,7 +110,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 +-----------------------------------------------------+
 ```
 
-### 3.2 Technologies
+### 3.2 Technologies envisagées
 
 #### Runtime de performance (Core)
 - **Langage** : Rust
