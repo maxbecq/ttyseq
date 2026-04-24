@@ -1,0 +1,26 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock.bak
+
+# sccache
+.sccache/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Éditeurs
+.vscode/
+.idea/
+*.swp
+*~
+.zed/
+
+# Environnement local
+.env
+.env.local
+
+# Logs
+*.log
