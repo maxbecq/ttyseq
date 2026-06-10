@@ -5,6 +5,8 @@
 ### 1.1 Description
 Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles ressources (Raspberry Pi, anciens ordinateurs), destiné à la **performance live** de musique électronique. Le système se compose de deux parties : un environnement de préparation (webapp/plugin) et un runtime de performance (terminal).
 
+> Le modèle de données détaillé (hiérarchie Project → Song → Section → Clip, comportements de fin de section, décisions actées et questions ouvertes) est défini dans [data-model.md](data-model.md).
+
 
 ## 2. Philosophie et Objectifs
 
@@ -21,6 +23,7 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 3. Interface terminal (TUI) fournissant un affichage synchrone
 4. Déclenchement et synchronisation via des messages standards (MIDI, DIN sync, Grid, 1-24 PPQ...) rendant possible l'utilisation de contrôleurs externes
 5. Stabilité en conditions live
+6. Transport simple : une seule commande **Play/Stop** (cf. [data-model.md §3](data-model.md#3-comportements-de-fin-de-section))
 
 ---
 
@@ -99,63 +102,69 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 
 #### Types de pistes
 
+Une track est un **conduit de sortie**, défini une fois pour tout le projet. Elle ne contient pas de données musicales — le contenu vit dans les clips, à l'intérieur des sections de chaque song (cf. [data-model.md §2.2](data-model.md#22-track--un-conduit-de-sortie)).
+
 1. **Pistes Audio Playback**
-   - Format : WAV, FLAC, MP3 (via `symphonia`)
+   - Format : WAV, FLAC (via `symphonia`)
    - Lecture temps réel avec buffer minimal
-   - Contrôle volume
+   - Contrôle volume/gain, état muet
    - Slot pour chaîne de plugins (voir §4.4)
 
 2. **Pistes MIDI**
-   - Séquences de notes/CC
+   - Fichiers `.mid` externes (MIDI standard), pas de séquences inlinées
    - Support clock MIDI externe *(à valider)*
 
-3. **Pistes CV** (Control Voltage)
+3. **Pistes CV** (Control Voltage) *(hors MVP)*
    - Via interface externe (Monome Crow, Expert Sleepers, etc.)
    - Courbes de modulation
    - Gates/triggers
    - LFO intégrés
 
 #### Organisation
-- Structure de scènes/sections à définir (approche propre au live, distincte d'Ableton)
-- Boucles par piste ou globales
+
+Le projet suit une hiérarchie en 4 niveaux : **Project → Song → Section → Clip**, avec les tracks comme conduits transverses (cf. [data-model.md §2](data-model.md#2-hiérarchie)).
+
+- Chaque **song** a son propre tempo (BPM) et sa signature rythmique
+- Chaque **section** a une durée fixe (en mesures/beats) et un comportement de fin (`Advance`, `Stop`, `LoopFull`, `LoopTail`)
+- Chaque **clip** est un pointeur vers un fichier externe (audio ou MIDI), joué sur une track dans une section
 
 #### Routing audio
 
-Chaque piste audio est routée vers une ou plusieurs sorties physiques. Le routage est direct : pas de bus internes ni de sends auxiliaires.
+Chaque piste audio est routée vers une sortie physique. Le routage est direct : pas de bus internes ni de sends auxiliaires.
 
 ```toml
 [[tracks]]
 id = 1
 name = "Kick"
-type = "audio_playback"
-file = "audio/kick.wav"
-output = ["main"]
+type = "audio"
+output = { type = "interface_channel", channel = 1 }
 volume = 0.85
 
 [[tracks]]
 id = 2
 name = "Pad"
-type = "audio_playback"
-file = "audio/pad.wav"
-output = ["main", "aux"]  # Split vers deux sorties physiques
+type = "audio"
+output = { type = "interface_channel", channel = 3 }
 volume = 0.60
 ```
+
+Le contenu musical (fichiers audio) est référencé dans les **clips** au niveau des sections, pas dans la définition des tracks (cf. [data-model.md §2.5](data-model.md#25-clip--le-contenu-musical-à-jouer)).
 
 ### 4.2 Interfaces de contrôle
 
 #### 4.2.1 Terminal (TUI)
 ```
 +-----------------------------------------------------+
-| ttySeq v1.0         Scene: Intro     BPM: 128  >   |
-+-----------------------------------------------------+
-| Track 1  [########..] Kick.wav         Vol: 85%     |
-| Track 2  [##########] Bass_MIDI        Mute         |
-| Track 3  [####......] Pad.wav          Vol: 60%     |
-| Track 4  [..........] Lead_CV          Armed        |
-+-----------------------------------------------------+
-| [1] Intro  [2] Verse  [3] Chorus*  [4] Bridge      |
-+-----------------------------------------------------+
-| > Play/Pause  Space: Cue  Tab: Next  S: Stop        |
+| ttySeq v1.0    Song: Opener    Section: Intro   128 BPM  > |
++------------------------------------------------------------+
+| Track 1  [########..] Drums (audio)      Vol: 85%          |
+| Track 2  [##########] Bass (midi)        Mute              |
+| Track 3  [####......] Pad (audio)        Vol: 60%          |
+| Track 4  [..........] Lead (cv)          Armed             |
++------------------------------------------------------------+
+| [1] Intro  [2] Couplet  [3] Refrain*  [4] Outro           |
++------------------------------------------------------------+
+| > Play/Stop                                                |
 +-----------------------------------------------------+
 ```
 
@@ -214,26 +223,42 @@ channels = [1, 2, 3, 4]
 
 **Fichier de projet (`project.toml` / `project.yaml`) :**
 ```toml
-[project]
+[metadata]
 name = "My Live Set"
-bpm = 128
-time_signature = "4/4"
+author = "Max"
 
+# Tracks = conduits de sortie (fixes pour tout le live)
 [[tracks]]
 id = 1
 name = "Kick"
-type = "audio_playback"
-file = "audio/kick.wav"
-output = ["main"]
+type = "audio"
+output = { type = "interface_channel", channel = 1 }
 volume = 0.85
 
 [[tracks]]
 id = 2
 name = "Bass"
 type = "midi"
-file = "midi/bass.mid"
-output = "drums_midi"
+output = { type = "device", name = "TR-8S" }
 channel = 1
+
+# Tempo et signature par song
+[[songs]]
+id = 1
+name = "Opener"
+tempo = 128.0
+time_signature = [4, 4]
+
+[[songs.sections]]
+name = "Intro"
+length = { bars = 8 }
+on_end = "advance"
+clips = {
+    1 = { type = "audio", file = "audio/kick_intro.wav" },
+    2 = { type = "midi", file = "midi/bass.mid", playback = "loop" }
+}
+
+setlist = [1]
 ```
 
 #### Types de sorties supportées
@@ -273,16 +298,15 @@ Le champ `plugins` est déjà présent dans le format de configuration des piste
 [[tracks]]
 id = 1
 name = "Kick"
-type = "audio_playback"
-file = "audio/kick.wav"
-output = ["main"]
+type = "audio"
+output = { type = "interface_channel", channel = 1 }
 plugins = []
 ```
 
 
 ### 4.5 Synchronisation
 
-- **Master Clock interne** : BPM configurable
+- **Master Clock interne** : tempo défini par song (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist))
 - **MIDI Clock** : In/Out, master/slave
 
 ---
@@ -293,23 +317,22 @@ plugins = []
 ```
 mon_set_live/
 ├── project.toml          # Configuration principale (format à trancher)
-├── audio/                # Fichiers audio
-│   ├── kick.wav
-│   ├── bass.wav
+├── audio/                # Fichiers audio (WAV/FLAC)
+│   ├── drums/
+│   │   ├── intro.wav
+│   │   └── drop.wav
 │   └── pad.flac
-├── midi/                 # Séquences MIDI
+├── midi/                 # Séquences MIDI (.mid)
 │   ├── bass.mid
 │   └── lead.mid
-├── cv/                   # Courbes CV
+├── cv/                   # Courbes CV (hors MVP)
 │   └── filter_env.cv
-├── scenes/               # Définitions de scènes
-│   ├── intro.toml
-│   ├── verse.toml
-│   └── chorus.toml
-└── mappings/             # Contrôleurs
+└── mappings/             # Contrôleurs (hors MVP)
     ├── grid.toml
     └── midi_controller.toml
 ```
+
+Les sections sont définies **inline** dans le fichier projet, à l'intérieur de chaque song — pas dans des fichiers séparés (cf. [data-model.md §2.4](data-model.md#24-section--lunité-fondamentale-du-live)).
 
 ### 5.2 Format de fichier projet (TOML ou YAML, à trancher)
 ```toml
@@ -322,14 +345,13 @@ author = "Artist Name"
 
 [project]
 name = "Live Set Winter 2026"
-bpm = 128
-time_signature = "4/4"
 master_volume = 1.0
 
 [sync]
-mode = "internal"  # internal, midi_clock, ableton_link
-link_enabled = true
+mode = "internal"  # internal, midi_clock
 ```
+
+Le tempo et la signature rythmique sont définis **par song**, pas au niveau du projet (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist)).
 
 ---
 
@@ -409,7 +431,7 @@ link_enabled = true
 #### Préparation (sur ordinateur)
 1. Créer nouveau projet dans WebApp
 2. Importer fichiers audio/MIDI
-3. Organiser en scènes/pistes
+3. Organiser en songs/sections/clips
 4. Configurer routing des sorties
 5. Mapper contrôleurs
 6. Exporter projet
@@ -419,7 +441,7 @@ link_enabled = true
 2. Lancer : `ttyseq run mon_set_live/`
 3. Interface TUI s'affiche
 4. Connecter contrôleurs (Grid, MIDI)
-5. Performer : déclenchement scènes, mute/solo, contrôle paramètres
+5. Performer : Play/Stop, mute/solo, contrôle paramètres
 6. Logs sauvegardés pour post-mortem
 
 ### 8.2 Cas d'usage principaux
@@ -431,24 +453,42 @@ link_enabled = true
 - Grid Monome pour déclenchement de scènes
 
 ```toml
+# Tracks = conduits de sortie (fixes pour tout le live)
 [[tracks]]
-name = "Drums Stem"
-type = "audio_playback"
-file = "audio/drums.wav"
-output = ["main"]
+id = 1
+name = "Drums"
+type = "audio"
+output = { type = "interface_channel", channel = 1 }
 
 [[tracks]]
-name = "Bass Stem"
-type = "audio_playback"
-file = "audio/bass.wav"
-output = ["main"]
+id = 2
+name = "Bass"
+type = "audio"
+output = { type = "interface_channel", channel = 2 }
 
 [[tracks]]
+id = 3
 name = "Synth Hardware"
 type = "midi"
-file = "midi/lead.mid"
-output = "synth_midi"
+output = { type = "device", name = "Synth" }
 channel = 1
+
+# Le contenu (fichiers audio/MIDI) est dans les clips des sections
+[[songs]]
+id = 1
+name = "Opener"
+tempo = 128.0
+time_signature = [4, 4]
+
+[[songs.sections]]
+name = "Drop"
+length = { bars = 16 }
+on_end = "advance"
+clips = {
+    1 = { type = "audio", file = "audio/drums.wav", playback = "loop" },
+    2 = { type = "audio", file = "audio/bass.wav", playback = "loop" },
+    3 = { type = "midi", file = "midi/lead.mid", playback = "loop" }
+}
 ```
 
 #### 2. Live band électronique — Pistes + click
@@ -459,25 +499,34 @@ channel = 1
 - MIDI vers synthé hardware
 
 ```toml
-[[outputs]]
-id = "main"
-channels = [0, 1]
-
-[[outputs]]
-id = "click"
-channels = [2, 3]  # Casque musiciens
-
+# Tracks = conduits de sortie
 [[tracks]]
+id = 1
 name = "Click Track"
-type = "audio_playback"
-file = "audio/click.wav"
-output = ["click"]  # Isolé du mix principal
+type = "audio"
+output = { type = "interface_channel", channel = 3 }  # Casque musiciens
 
 [[tracks]]
+id = 2
 name = "Backing Vocals"
-type = "audio_playback"
-file = "audio/bvox.wav"
-output = ["main"]
+type = "audio"
+output = { type = "interface_channel", channel = 1 }
+
+# Clips dans les sections
+[[songs]]
+id = 1
+name = "Set complet"
+tempo = 120.0
+time_signature = [4, 4]
+
+[[songs.sections]]
+name = "Couplet 1"
+length = { bars = 16 }
+on_end = "advance"
+clips = {
+    1 = { type = "audio", file = "audio/click.wav", playback = "loop" },
+    2 = { type = "audio", file = "audio/bvox_v1.wav" }
+}
 ```
 
 #### 3. Prototype Eurorack/Hardware
@@ -487,20 +536,34 @@ output = ["main"]
 - Séquences audio de drones/textures en playback
 
 ```toml
+# Tracks = conduits de sortie
 [[tracks]]
+id = 1
 name = "CV Envelope"
 type = "cv"
-device = "crow"
+output = { type = "device", name = "crow" }
 channel = 1
-curve = "adsr"
-output = "modular_cv"
 
 [[tracks]]
+id = 2
 name = "Drone"
-type = "audio_playback"
-file = "audio/drone.wav"
-loop = true
-output = ["main"]
+type = "audio"
+output = { type = "interface_channel", channel = 1 }
+
+# Clips dans les sections
+[[songs]]
+id = 1
+name = "Ambient Set"
+tempo = 80.0
+time_signature = [4, 4]
+
+[[songs.sections]]
+name = "Texture"
+length = { bars = 32 }
+on_end = "loop_full"
+clips = {
+    2 = { type = "audio", file = "audio/drone.wav", playback = "loop" }
+}
 ```
 
 ---
@@ -511,7 +574,7 @@ output = ["main"]
 |---------|--------|--------------|-------|------|--------|
 | Ressources | Très faible | Élevées | Moyen | Faible | Élevées |
 | Latence | < 10ms | 10–20ms | < 10ms | Variable | 10–20ms |
-| Audio+MIDI+CV | ✅ | ✅ | ✅ | ❌ (MIDI only) | ✅ |
+| Audio+MIDI (+CV prévu) | ✅ | ✅ | ✅ | ❌ (MIDI only) | ✅ |
 | Interface terminal | ✅ | ❌ | ❌ | ✅ | ❌ |
 | Prix | Gratuit | €349+ | €650 | Gratuit | €399 |
 | Orienté live | ✅ | ✅ | ✅ | ⚠️ | ✅ |
@@ -577,6 +640,6 @@ output = ["main"]
 
 ---
 
-**Document version** : 1.1
-**Date** : 2 avril 2026
+**Document version** : 1.2
+**Date** : 25 avril 2026
 **Auteur** : Spécification collaborative
