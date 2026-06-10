@@ -31,6 +31,8 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 
 ### 3.1 Composants principaux
 
+ttySeq adopte une architecture **client/serveur unifiée dans un binaire unique** : un engine séquenceur central, une couche protocole, et des clients qui s'y branchent (TUI, CLI, intégrations OSC externes). Le détail des modes de lancement et du protocole est défini en §3.3.
+
 ```
 +-----------------------------------------------------+
 |           ENVIRONNEMENT DE PRÉPARATION              |
@@ -51,32 +53,35 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
                        | Export/Transfer
                        |
 +----------------------v------------------------------+
-|           RUNTIME DE PERFORMANCE                    |
+|              RUNTIME DE PERFORMANCE                 |
 |                                                     |
-|  +---------------------------------------+          |
-|  |    Terminal Sequencer (Rust)          |          |
-|  |                                       |          |
-|  |  +----------+  +----------+           |          |
-|  |  | Playback |  | Control  |           |          |
-|  |  |  Engine  |  | Interface|           |          |
-|  |  +----+-----+  +----+-----+           |          |
-|  |       |             |                 |          |
-|  |  +----v-------------v-----+           |          |
-|  |  |   Audio/MIDI Router    |           |          |
-|  |  +----+--------+------+---+           |          |
-|  +-------|--------|------|---------------+          |
-|          |        |      |                          |
-|     +----v----+ +-v----+ +v----+                    |
-|     | Audio   | | MIDI | | CV  |                    |
-|     |  Out    | | Out  | | Out |                    |
-|     +---------+ +------+ +-----+                    |
-|                                                     |
-|  +---------------------------------------+          |
-|  |    Input Controllers                  |          |
-|  |  • Terminal (TUI)                     |          |
-|  |  • MIDI Controllers                   |          |
-|  |  • Monome Grid                        |          |
-|  +---------------------------------------+          |
+|  +--------+  +--------+  +-----------------+        |
+|  |  TUI   |  |  CLI   |  |   OSC clients   |        |
+|  |        |  |        |  |  (SC, Tidal…)   |        |
+|  +---+----+  +---+----+  +--------+--------+        |
+|      |           |                |                 |
+|      | MPSC      | Unix socket    | UDP loopback    |
+|      | (in-proc) | (toujours)     | (opt-in)        |
+|      |           |                |                 |
+|      +-----+-----+----------------+                 |
+|            |          (cf. §3.3)                    |
+|     +------v-------+                                |
+|     |   Couche     |                                |
+|     |  protocole   |                                |
+|     +------+-------+                                |
+|            |                                        |
+|     +------v-------+                                |
+|     |    Engine    |                                |
+|     |  séquenceur  |                                |
+|     +------+-------+                                |
+|            |                                        |
+|   +--------+--------+                               |
+|   |        |        |                               |
+|   v        v        v                               |
+| +-----+ +------+ +-----+                            |
+| |Audio| | MIDI | | CV  |                            |
+| | Out | | Out  | | Out |                            |
+| +-----+ +------+ +-----+                            |
 +-----------------------------------------------------+
 ```
 
@@ -89,10 +94,68 @@ Séquenceur musical hybride audio/MIDI/CV optimisé pour systèmes à faibles re
 - **TUI** : `ratatui`
 - **Configuration** : `serde` + TOML ou YAML *(à trancher)*
 - **Thread priorité** : `thread-priority`
+- **IPC interne** : `std::sync::mpsc` ou `crossbeam-channel`, ring buffer lock-free `rtrb` pour le chemin audio
+- **IPC externe** : socket Unix natif (`std::os::unix::net`), OSC via `rosc` *(à confirmer)*
+- **Sérialisation wire** : `serde` + MessagePack (`rmp-serde`) ou JSON (`serde_json`) *(à trancher, cf. §3.3.4)*
 
 #### Environnement de préparation
 - **Option 1 - WebApp** : Tauri (Rust + HTML/CSS/JS)
 - **Option 2 - Plugin Ableton** : Max4Live ou Python (extension future)
+
+### 3.3 Architecture client/serveur et modes de lancement
+
+ttySeq est structuré comme un **engine séquenceur** entouré d'une couche protocole, à laquelle se branchent un ou plusieurs **clients** (TUI, CLI, intégrations externes type live coding). Le même vocabulaire de messages est utilisé en interne (entre threads, in-process) et en externe (entre processus, via socket ou OSC), avec une sérialisation appliquée uniquement quand un client distant est concerné.
+
+Cette structure permet de garder un binaire unique pour les usages simples et solo, tout en ouvrant la voie à des frontends variés (CLI, web, contrôleurs externes, scripts) sans réécrire le cœur.
+
+#### 3.3.1 Modes de lancement
+
+Le binaire `ttyseq` peut être invoqué de quatre façons selon le contexte :
+
+| Invocation | Mode | Comportement |
+|---|---|---|
+| `ttyseq` | Embedded | Engine + TUI dans le même process (cas par défaut, usage solo) |
+| `ttyseq daemon` | Headless | Engine seul, sans TUI, expose l'IPC |
+| `ttyseq attach` | Client TUI | TUI qui se connecte à un daemon existant |
+| `ttyseq <subcommand>` | One-shot | Commande CLI qui envoie un message au daemon, attend la réponse, termine |
+
+Quel que soit le mode, l'engine se comporte de la même façon et les clients communiquent avec lui via les mêmes types de messages.
+
+#### 3.3.2 Protocole interne (dogfood léger)
+
+Un seul vocabulaire de messages — `EngineCommand` (commandes envoyées à l'engine) et `EngineEvent` (événements émis par l'engine) — est utilisé indépendamment du transport.
+
+- **Transport in-process** : les messages traversent une MPSC channel Rust, sans sérialisation. Le TUI embarqué utilise ce chemin.
+- **Transport externe** : les mêmes messages sont sérialisés via `serde` au passage du socket Unix ou de l'interface OSC.
+
+Cette approche garantit qu'aucune capacité du TUI ne soit indisponible aux clients externes, et inversement. Le surcoût d'écriture initial se limite à la discipline de garder les messages sous forme de données pures (pas de closures, pas de pointeurs partagés).
+
+#### 3.3.3 Transports externes par défaut
+
+Le comportement par défaut est asymétrique :
+
+- **Socket Unix** : ouvert systématiquement, à l'emplacement `$XDG_RUNTIME_DIR/ttyseq.sock`. Pas de surface réseau, pas de port ouvert. Sert au CLI local et aux frontends riches (webapp future, etc.).
+- **OSC sur UDP** : désactivé par défaut. S'active explicitement via configuration ou flag de lancement, et bind par défaut sur `127.0.0.1` (loopback only). Sert à l'intégration avec des environnements de live coding (SuperCollider, TidalCycles, etc.).
+
+L'asymétrie reflète une asymétrie de risque et d'intention : le socket Unix local est essentiellement gratuit et toujours utile ; OSC engage un port réseau et a vocation à être activé délibérément.
+
+#### 3.3.4 Format de sérialisation
+
+À trancher en phase d'implémentation entre :
+
+- **JSON** : lisible humainement, debug facile, supporté partout, mais verbeux.
+- **MessagePack** : binaire compact, schéma identique à JSON côté Rust via `serde`, inspectable avec des outils dédiés.
+- **Bincode** : binaire Rust-spécifique, très rapide, mais difficile à consommer depuis d'autres langages.
+
+OSC a son propre format binaire imposé par sa spec. Pour le socket Unix, MessagePack apparaît comme un bon compromis (compacité + interopérabilité), à confirmer.
+
+#### 3.3.5 Modèle requête/réponse et abonnement
+
+L'engine peut être interrogé en **requête/réponse** (un client envoie une `EngineCommand` portant un `request_id`, attend l'`EngineEvent` correspondant), et peut aussi être **écouté en flux** par les clients qui veulent suivre l'état en temps réel (TUI, webapp, contrôleurs OSC). Le protocole prévoit donc une notion d'**abonnement** : un client peut demander à recevoir tous les événements d'une catégorie (transitions de section, lancement de clips, changements de transport, etc.).
+
+#### 3.3.6 Sync tempo : sujet distinct
+
+L'IPC décrite ici sert au **contrôle sémantique** : lancement de clips, transitions de sections, changements de transport, mutations d'état. Elle n'est pas conçue pour la synchronisation tempo à l'échantillon près. Les protocoles standards pour ce besoin (MIDI Clock, Ableton Link) sont à traiter séparément (cf. §4.6 et sujets différés en §10).
 
 ---
 
@@ -155,6 +218,8 @@ volume = 0.60
 Le contenu musical (fichiers audio) est référencé dans les **clips** au niveau des sections, pas dans la définition des tracks (cf. [data-model.md §2.5](data-model.md#25-clip--le-contenu-musical-à-jouer)).
 
 ### 4.2 Interfaces de contrôle
+
+Les interfaces décrites ci-dessous (TUI, Monome Grid, contrôleurs MIDI) sont toutes des **clients du protocole §3.3**. Elles ne dialoguent pas directement avec le routeur audio/MIDI : elles envoient des `EngineCommand` et reçoivent des `EngineEvent` via le transport approprié (MPSC in-process pour le TUI embarqué, socket Unix ou bus interne pour les autres). Cette uniformité permet d'ajouter de nouvelles interfaces sans modifier l'engine.
 
 #### 4.2.1 Terminal (TUI)
 ```
@@ -374,6 +439,7 @@ plugins = []
 
 - **Master Clock interne** : tempo défini par song (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist))
 - **MIDI Clock** : In/Out, master/slave
+- **Ableton Link** *(sujet différé, hors MVP)* : intégration envisagée à terme pour la synchronisation tempo inter-applications avec des environnements de live coding (cf. §3.3.6 et §10)
 
 ---
 
@@ -436,6 +502,9 @@ Le tempo et la signature rythmique sont définis **par song**, pas au niveau du 
 - [ ] Synchronisation précise audio/MIDI
 - [ ] Optimisation latence
 - [ ] Gestion de scènes/sections
+- [ ] Protocole interne (cf. §3.3) : types `EngineCommand` / `EngineEvent`, transport MPSC in-process, transport socket Unix
+- [ ] Modes de lancement : `ttyseq`, `ttyseq daemon`, `ttyseq attach`, `ttyseq <subcommand>`
+- [ ] Interface OSC opt-in pour intégration live coding (loopback par défaut)
 - [ ] Contrôle clavier étendu
 - [ ] Tests sur Raspberry Pi
 
@@ -671,6 +740,14 @@ clips = {
 | Complexité TUI | Moyen | Élevé | Itération UX, modes simplifiés |
 | Compatibilité CV hardware | Moyen | Moyen | Support limité à devices populaires (Crow) |
 | Scope creep | Élevé | Élevé | MVP strict, roadmap claire |
+| Latence IPC (socket Unix, OSC) | Faible | Faible | Le thread audio RT ne touche jamais à l'IPC ; transports loopback uniquement par défaut |
+
+### Sujets différés (post-MVP)
+
+Topics architecturalement reconnus mais hors scope du MVP et de ses extensions immédiates, listés ici pour mémoire :
+
+- **Ableton Link** : synchronisation tempo inter-applications avec environnements de live coding (cf. §3.3.6, §4.6). Le besoin est réel pour l'intégration SuperCollider / TidalCycles / Sonic Pi en performance hybride, mais l'implémentation est différée pour ne pas alourdir le scope initial.
+- **Sync tempo à l'échantillon près** : au-delà de MIDI Clock et Ableton Link, des mécanismes plus fins (synchro via timestamps OSC, intégration JACK transport) pourront être étudiés selon les besoins de performance.
 
 ---
 
@@ -714,6 +791,6 @@ clips = {
 
 ---
 
-**Document version** : 1.3
-**Date** : 26 avril 2026
+**Document version** : 1.4
+**Date** : 11 juin 2026
 **Auteur** : Spécification collaborative
