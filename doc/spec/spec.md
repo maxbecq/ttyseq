@@ -108,17 +108,19 @@ Une track est un **conduit de sortie**, défini une fois pour tout le projet. El
    - Format : WAV, FLAC (via `symphonia`)
    - Lecture temps réel avec buffer minimal
    - Contrôle volume/gain, état muet
-   - Slot pour chaîne de plugins (voir §4.4)
+   - Slot pour chaîne de plugins (voir §4.5)
 
 2. **Pistes MIDI**
    - Fichiers `.mid` externes (MIDI standard), pas de séquences inlinées
    - Support clock MIDI externe *(à valider)*
 
-3. **Pistes CV** (Control Voltage) *(hors MVP)*
-   - Via interface externe (Monome Crow, Expert Sleepers, etc.)
-   - Courbes de modulation
-   - Gates/triggers
-   - LFO intégrés
+3. **Pistes CV** (Control Voltage) — placeholder architectural
+
+   Trois étapes prévues, dont seule la première est dans le MVP :
+
+   - **MVP** : pas de type "CV" explicite. L'envoi de CV passe par une **piste MIDI** routée vers un convertisseur MIDI-to-CV externe (séquenceur hardware, module de conversion). C'est suffisant pour les notes, gates et triggers.
+   - **Post-MVP — CV brut via audio multicanal** : une piste audio peut être routée vers des canaux physiques dédiés à la modulation. Le signal est traité comme de l'audio par ttySeq, mais doit être bypassé strictement en aval (cf. §4.4).
+   - **Post-MVP — MIDI-to-CV natif** : type de piste générant des signaux DC calibrés (V/Oct, gates) sur des canaux audio dédiés, à la manière du CV Tools d'Ableton. Permet d'éditer en MIDI tout en sortant du CV propre, sans hardware de conversion.
 
 #### Organisation
 
@@ -130,7 +132,9 @@ Le projet suit une hiérarchie en 4 niveaux : **Project → Song → Section →
 
 #### Routing audio
 
-Chaque piste audio est routée vers une sortie physique. Le routage est direct : pas de bus internes ni de sends auxiliaires.
+Le routage est **direct** : chaque piste audio est routée vers la sortie principale ou vers un canal physique spécifique. Pas de bus auxiliaires, pas de sends, pas de matrix de routing.
+
+Le **bus de sommation principal** est interne à ttySeq : c'est le seul point où plusieurs pistes audio sont mixées entre elles, à destination de la sortie stéréo principale. Pour des sorties multicanaux dédiées (par track ou groupe de tracks), le routage reste direct vers le canal physique cible.
 
 ```toml
 [[tracks]]
@@ -266,7 +270,69 @@ setlist = [1]
 2. **MIDI** : Ports MIDI standard
 3. **CV** : Monome Crow via USB série
 
-### 4.4 Système de Plugins (architecture prévue, implémentation reportée)
+### 4.4 Intégration audio en chaîne live
+
+Beaucoup de performeurs utilisent leur DAW non seulement pour le séquençage mais aussi comme **mixer de fin de chaîne** : sommation de plusieurs sources (séquenceur, modulaire, autres machines) et traitement master (compression, limitation). Avec ttySeq comme remplaçant du DAW, cette fonction n'est volontairement pas intégrée — au nom de la simplicité et de la séparation des responsabilités.
+
+#### 4.4.1 Périmètre de ttySeq
+
+ttySeq se limite strictement au séquençage et à la sortie audio :
+
+- Les pistes audio internes sont sommées vers une **sortie stéréo principale** (cf. §4.3)
+- Aucune entrée audio externe n'est traitée par ttySeq
+- Aucun effet master n'est appliqué
+
+#### 4.4.2 Démon mixer externe (recommandation, hors MVP)
+
+Pour les performeurs qui ont besoin d'un mix master (sommation de plusieurs sources + compression/limitation), la solution recommandée est un **process séparé** sur la même machine, branché en aval de ttySeq via une couche audio inter-process (JACK, ou PipeWire en mode JACK-compatible).
+
+Ce démon — appelons-le `ttyseq-mixer` — n'est pas développé dans la phase MVP, mais sa place dans la chaîne est documentée dès maintenant pour cadrer l'architecture. Il pourrait être :
+
+- Un programme dédié écrit dans ce projet (post-MVP)
+- Un outil tiers existant (`mod-host`, `Carla`, etc.) configuré pour ce rôle
+- Absent — remplacé par du hardware (table de mix + compresseur master)
+
+**Topologie cible :**
+
+```
+ttySeq ───────────┐
+modulaire ────────┤
+autres sources ───┤
+                  ├─► démon mixer ─► sortie physique
+                  │   (sommation +
+                  │    master FX)
+```
+
+#### 4.4.3 Routing audio musical / CV distinct
+
+Si le démon mixer route aussi des canaux CV (cf. §4.1 — CV brut via audio multicanal), il doit distinguer **deux chemins de signal** :
+
+- **Audio musical** (ttySeq L/R, sources externes) → sommation → effets master (compresseur, limiteur, EQ) → sortie principale
+- **CV** (canaux audio dédiés à la modulation) → bypass strict, aucun traitement → sorties physiques correspondantes
+
+Cette distinction est critique : un compresseur ou un limiteur appliqué à un signal CV altèrerait les enveloppes et les tensions de pitch.
+
+#### 4.4.4 Latence inter-process
+
+Avec JACK ou PipeWire, deux processus dans le même graphe audio partagent le même cycle de traitement (mémoire partagée, period commune). La latence inter-process est essentiellement nulle, contrairement à un chaînage via deux drivers ALSA séparés.
+
+#### 4.4.5 Configuration des sorties
+
+Côté `config.toml`, la sortie principale de ttySeq peut être routée vers un port JACK plutôt que vers un canal hardware direct, pour permettre l'insertion d'un démon mixer en aval :
+
+```toml
+[audio]
+backend = "jack"
+
+[[outputs]]
+id = "main"
+type = "audio"
+ports = ["mixer:in_L", "mixer:in_R"]
+```
+
+En l'absence de démon mixer, la sortie est routée directement vers les canaux physiques.
+
+### 4.5 Système de Plugins (architecture prévue, implémentation reportée)
 
 L'architecture plugin est définie dès maintenant pour éviter un refactor futur, mais les implémentations concrètes arrivent en phase 3. En phase 1-2, les pistes passent leur signal directement sans traitement.
 
@@ -304,7 +370,7 @@ plugins = []
 ```
 
 
-### 4.5 Synchronisation
+### 4.6 Synchronisation
 
 - **Master Clock interne** : tempo défini par song (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist))
 - **MIDI Clock** : In/Out, master/slave
@@ -378,17 +444,25 @@ Le tempo et la signature rythmique sont définis **par song**, pas au niveau du 
 - [ ] MIDI mapping configurable
 - [ ] Feedback visuel (LED)
 
-### Phase 4 : Sorties avancées
-- [ ] Support CV (Crow)
-- [ ] Multi-sorties audio
+### Phase 4 : Sorties multicanaux et CV brut
+- [ ] Multi-sorties audio (canaux multiples par carte son)
+- [ ] Pistes audio routées vers canaux CV dédiés (modulation, gates)
 
-### Phase 5 : Environnement de préparation
+### Phase 5 : Démon mixer (optionnel)
+- [ ] `ttyseq-mixer` séparé : sommation multi-sources + master FX
+- [ ] Routing audio musical / CV distinct (bypass strict pour le CV)
+
+### Phase 6 : MIDI-to-CV natif
+- [ ] Type de piste "MIDI-to-CV" : génération de signaux DC calibrés (V/Oct, gates)
+- [ ] Calibration par sortie
+
+### Phase 7 : Environnement de préparation
 - [ ] WebApp Tauri basique
 - [ ] Éditeur de projet visuel
 - [ ] Timeline drag & drop
 - [ ] Export vers runtime
 
-### Phase 6 : Écosystème & Polish
+### Phase 8 : Écosystème & Polish
 - [ ] Plugin Ableton (optionnel)
 - [ ] Documentation complète
 - [ ] Presets et templates
@@ -418,7 +492,7 @@ Le tempo et la signature rythmique sont définis **par song**, pas au niveau du 
 ### 7.3 Limites techniques
 - **Pistes audio simultanées** : 16 minimum, 32 recommandé
 - **Pistes MIDI simultanées** : 64
-- **Sorties CV** : 8 canaux max
+- **Sorties CV** : limité par la carte son (CV brut transitant par des canaux audio dédiés, post-MVP)
 - **Taille fichier audio** : Illimitée (streaming)
 - **Résolution audio** : 16/24-bit, 44.1–96kHz
 
@@ -640,6 +714,6 @@ clips = {
 
 ---
 
-**Document version** : 1.2
-**Date** : 25 avril 2026
+**Document version** : 1.3
+**Date** : 26 avril 2026
 **Auteur** : Spécification collaborative
