@@ -45,8 +45,8 @@ noyau 6.18.39-rpt aarch64, Babyface Pro bus-powered directement sur le Pi.
 | 5 | Sample rates | tester 44.1 / 48 / 96 kHz | Rates acceptés en CC | ✅ Descripteur USB : 44.1 / 48 / 88.2 / 96 / 176.4 / 192 kHz. Lecture effective vérifiée à 48 kHz |
 | 6 | Spike cpal | lancer le spike à buffer 1024, puis 512, 256, 128 | Pas de xrun audible ; noter le CPU (`top`) à chaque palier | ✅ Spike `spikes/babyface-cc/` (build debug), 48 kHz / 12 canaux, 60 s par palier : **0 underrun à 1024, 512, 256 et 128**. CPU ≈ 22-24 % d'un cœur à chaque palier. 0 xrun dmesg |
 | 7 | Stress | lecture continue 30 min à la config cible (48 kHz / 512) | Zéro xrun (`dmesg`, compteurs ALSA) | ✅ **30 min / 0 underrun** (48 kHz / 512 / 12 canaux, build debug), CPU stable ≈ 25 % d'un cœur, 0 xrun dmesg |
-| 8 | Hotplug | débrancher/rebrancher en cours de route | La carte réapparaît proprement (comportement à documenter pour la spec hotplug §3.3.7) | |
-| 9 | (Option) Latence round-trip | JACK + `jack_iodelay` avec câble loopback sortie→entrée | Mesure réelle, à comparer à l'objectif < 10 ms | |
+| 8 | Hotplug | débrancher/rebrancher en cours de route | La carte réapparaît proprement (comportement à documenter pour la spec hotplug §3.3.7) | ✅ Débranchement en cours de lecture : le processus survit (pas de panic), le callback d'erreur cpal remonte proprement « buffer underrun » puis « device not available » puis « Device disconnected ». Rebranchement : la carte réapparaît au même index ALSA (carte 3) ; warnings dmesg bénins (« falling back to MIDI 1.0 », « unit 2 not found »). **Le flux cpal ne reprend pas tout seul : l'application doit détecter la disparition et rouvrir le device** — à intégrer dans la spec hotplug §3.3.7 |
+| 9 | (Option) Latence round-trip | JACK + `jack_iodelay` avec câble loopback sortie→entrée | Mesure réelle, à comparer à l'objectif < 10 ms | ⏸️ Différée : pas de câble de loopback disponible pendant la session |
 
 ## Critères de succès
 
@@ -61,3 +61,25 @@ sans xrun sur le spike cpal.
   prévoir/recommander une alternative class-compliant ?
 - Retombées spec éventuelles : contraintes CC à documenter (canaux, routing sans
   TotalMix), comportement hotplug observé.
+
+## Bilan de la session du 18-19/08/2026
+
+**Tous les critères de succès sont atteints** : détection fiable, 12 canaux de
+sortie exposés (≥ 4 requis ; 4 analogiques vérifiés à l'oreille, 8 ADAT non
+testés faute de matériel), 48 kHz / buffer 512 stable 30 min sans le moindre
+underrun (et même buffer 128 stable 60 s), en **bus-powered directement sur le
+Pi 4** — le risque alimentation ne s'est pas matérialisé sur ce setup.
+
+Proposition (à valider) : **la Babyface Pro en mode CC est utilisable comme
+interface de référence de ttySeq sur Pi.**
+
+Contraintes CC relevées, à documenter côté spec :
+
+- Format natif S24_3LE uniquement sur le `hw` brut ; passer par `plughw` pour
+  du f32 cpal (conversion ALSA, surcoût négligeable ici).
+- Casque sur les canaux 3-4, recevant aussi en miroir les mains 1-2 — routing
+  interne figé par l'appareil, pas de TotalMix sous Linux.
+- Hotplug : la carte réapparaît au même index, mais le flux cpal est
+  irrécupérable — l'engine devra détecter la déconnexion (callback d'erreur)
+  et rouvrir le device (spec §3.3.7).
+- Latence round-trip non mesurée (étape 9 différée, câble manquant).
