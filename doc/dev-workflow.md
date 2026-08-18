@@ -36,6 +36,9 @@ La frontière peut bouger d'un commun accord, jamais implicitement.
 
 ## 4. Stratégie de test — trois étages
 
+> Détail complet (exemples, couverture par décision, outillage) : [test-strategy.md](test-strategy.md).
+> Les validations matérielles se font en spikes documentés dans `doc/spikes/`.
+
 L'engine séquenceur est **pur** : il ne possède pas d'horloge, ne fait aucun syscall ;
 on lui fournit le temps écoulé et les commandes, il répond par des événements.
 En production c'est le callback audio qui fait avancer le temps ; en test, c'est le test.
