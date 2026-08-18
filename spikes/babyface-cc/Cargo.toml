@@ -1,0 +1,14 @@
+[package]
+name = "babyface-cc-spike"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[[bin]]
+name = "babyface-spike"
+path = "src/main.rs"
+
+[dependencies]
+cpal = "0.18.1"
+rtrb = "0.3.4"
+hound = "3.5.1"

@@ -33,13 +33,16 @@
 
 Remplir la colonne résultat à chaque étape.
 
+Session du 18/08/2026 — Pi 4 (1,8 Go, `gustave`), Debian 13 « trixie »,
+noyau 6.18.39-rpt aarch64, Babyface Pro bus-powered directement sur le Pi.
+
 | # | Étape | Commande / action | Attendu | Résultat |
 |---|---|---|---|---|
-| 1 | Détection | `aplay -l`, `cat /proc/asound/cards` | La Babyface apparaît comme carte ALSA | |
-| 2 | MIDI | `amidi -l` | Les ports MIDI de la Babyface apparaissent | |
-| 3 | Stéréo de base | `speaker-test -D hw:CARD=<nom> -c 2 -r 48000 -f S32_LE` | Son propre sur les sorties principales | |
-| 4 | Canaux exposés | `speaker-test -c <N>` en montant N | Nombre de canaux réellement accessibles en CC (noter : sorties casque/lignes/ADAT) | |
-| 5 | Sample rates | tester 44.1 / 48 / 96 kHz | Rates acceptés en CC | |
+| 1 | Détection | `aplay -l`, `cat /proc/asound/cards` | La Babyface apparaît comme carte ALSA | ✅ Carte 3 `Pro71993645` ; `lsusb` : `2a39:3fb0 RME Babyface Pro (Class Compliant Mode)` |
+| 2 | MIDI | `amidi -l` | Les ports MIDI de la Babyface apparaissent | ✅ 2 ports IO : `hw:3,0,0` (Port 1), `hw:3,0,1` (Port 2) |
+| 3 | Stéréo de base | `speaker-test -D hw:CARD=<nom> -c 2 -r 48000 -f S32_LE` | Son propre sur les sorties principales | ✅ Son propre confirmé au casque. Via `plughw` obligatoirement : le `hw` brut n'accepte que du S24_3LE, que `speaker-test` ne génère pas |
+| 4 | Canaux exposés | `speaker-test -c <N>` en montant N | Nombre de canaux réellement accessibles en CC (noter : sorties casque/lignes/ADAT) | ✅ 12 out / 12 in (S24_3LE) d'après `/proc/asound/card3/stream0`. Vérifié à l'oreille (WAV 12 canaux, N bips sur canal N) : casque = canaux 3-4, recevant aussi en miroir les mains 1-2 (impairs à gauche, pairs à droite) ; canaux 5-12 = ADAT, non testés faute de matériel |
+| 5 | Sample rates | tester 44.1 / 48 / 96 kHz | Rates acceptés en CC | ✅ Descripteur USB : 44.1 / 48 / 88.2 / 96 / 176.4 / 192 kHz. Lecture effective vérifiée à 48 kHz |
 | 6 | Spike cpal | lancer le spike à buffer 1024, puis 512, 256, 128 | Pas de xrun audible ; noter le CPU (`top`) à chaque palier | |
 | 7 | Stress | lecture continue 30 min à la config cible (48 kHz / 512) | Zéro xrun (`dmesg`, compteurs ALSA) | |
 | 8 | Hotplug | débrancher/rebrancher en cours de route | La carte réapparaît proprement (comportement à documenter pour la spec hotplug §3.3.7) | |
