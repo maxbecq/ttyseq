@@ -1,0 +1,34 @@
+[package]
+name = "ttyseq-spike"
+version = "0.1.0"
+edition = "2024"
+default-run = "ttyseq-spike"
+
+[features]
+# SSD1322 screen probes (SPI/GPIO) — Linux/Raspberry Pi only.
+# Same compile-time gating model as the future `norns-shield` cargo feature
+# (see doc/spec/spec.md §3.3.7).
+shield = ["dep:spidev", "dep:gpiod", "dep:embedded-graphics"]
+
+[dependencies]
+cpal = "0.18.1"
+rtrb = "0.3.4"
+hound = "3.5.1"
+spidev = { version = "0.7", optional = true }
+gpiod = { version = "0.3", optional = true }
+embedded-graphics = { version = "0.8", optional = true }
+
+[[bin]]
+name = "eg_probe"
+path = "src/bin/eg_probe.rs"
+required-features = ["shield"]
+
+[[bin]]
+name = "fates_probe"
+path = "src/bin/fates_probe.rs"
+required-features = ["shield"]
+
+[[bin]]
+name = "zjy_probe"
+path = "src/bin/zjy_probe.rs"
+required-features = ["shield"]
