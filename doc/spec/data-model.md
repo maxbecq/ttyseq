@@ -2,7 +2,7 @@
 
 > Document de spécification pour `ttyseq-core` — la modélisation des données qui décrivent un projet de live.
 > 
-> Ce document est en cours de finalisation. Les décisions actées sont marquées ✅. Les questions ouvertes sont marquées ❓ et appellent une décision avant l'implémentation.
+> Les décisions actées sont marquées ✅. Toutes les questions ouvertes ont été tranchées (18 août 2026) : ce document décrit l'état acté du modèle de données, récapitulé en §5.
 
 ---
 
@@ -99,7 +99,9 @@ Trois variantes :
 - `OneShot` : joue une fois, puis silence si la section dure plus longtemps
 - `Loop` : boucle si plus court que la section
 
-**Si un clip dépasse la durée de la section : il est coupé net.** ✅ (cf. §6.3)
+**Si un clip dépasse la durée de la section : il est coupé net.** ✅
+
+**Tous les clips d'une section démarrent au début de la section** — pas de `start_offset` en MVP ; une entrée décalée se modélise en découpant la section en deux. ✅
 
 ## 3. Comportements de fin de section
 
@@ -109,12 +111,21 @@ Quatre comportements possibles, exprimés par `SectionBehavior` :
 |---|---|
 | `Advance` | À la fin de la section, **passer automatiquement** à la section suivante (ou à la song suivante si c'est la dernière section). |
 | `Stop` | À la fin de la section, **arrêter la lecture**. Le performeur appuie sur Play pour continuer (à la section suivante). |
-| `LoopFull` | **Boucler la section entière** indéfiniment jusqu'à ce que le performeur appuie sur Stop. |
-| `LoopTail { tail_length }` | Jouer la section une fois, puis **boucler les N derniers beats** jusqu'au Stop. |
+| `LoopFull` | **Boucler la section entière** indéfiniment, jusqu'à une sortie de boucle demandée par Stop (cf. §3.1). |
+| `LoopTail { tail_length }` | Jouer la section une fois, puis **boucler les `tail_length` derniers beats** indéfiniment, jusqu'à une sortie demandée par Stop. `tail_length` est une durée relative à la fin de la section. |
+
+Les boucles sont **illimitées** : pas de compteur de répétitions — c'est le performeur qui décide quand avancer. ✅
 
 **Une seule commande de transport : Play/Stop.** ✅
 
-Le performeur n'a pas de touches dédiées "section suivante" ou "song suivante". L'enchaînement est entièrement piloté par les `on_end` écrits dans le projet, et les boucles sont interrompues par Stop.
+Le performeur n'a pas de touches dédiées "section suivante" ou "song suivante". L'enchaînement est entièrement piloté par les `on_end` écrits dans le projet, et les sorties de boucle sont demandées par Stop.
+
+### 3.1 Sémantique de Stop ✅
+
+L'effet de Stop dépend du contexte de lecture :
+
+- **Hors boucle** : Stop **coupe net** (sample-accurate). Un Play ultérieur reprend **au début de la section suivante** (ou de la song suivante si c'était la dernière section de la song). Usage : « je coupe parce que ça dérape, je relance sur la suite. »
+- **Pendant une boucle** (`LoopFull` ou `LoopTail` en cours) : le premier Stop **programme la sortie de boucle** — le passage en cours se termine, puis la lecture enchaîne sur la section suivante, sans silence. Un **second Stop** pendant ce dernier passage **coupe net** (cas d'urgence), avec la même sémantique de reprise que hors boucle.
 
 ## 4. Schéma de l'exécution
 
@@ -135,8 +146,8 @@ Le performeur n'a pas de touches dédiées "section suivante" ou "song suivante"
 3. Applique `on_end` :
    - `Advance` → enchaîne sur la section suivante
    - `Stop` → arrête, attend Play
-   - `LoopFull` → revient au début de la section, attend Stop
-   - `LoopTail` → revient au point `length - tail_length`, attend Stop
+   - `LoopFull` → revient au début de la section ; un Stop programme la sortie en fin de passage (cf. §3.1)
+   - `LoopTail` → revient au point `length - tail_length` ; sortie demandée de la même façon par Stop
 
 ## 5. Décisions actées ✅
 
@@ -150,75 +161,23 @@ Le performeur n'a pas de touches dédiées "section suivante" ou "song suivante"
 8. **MIDI = fichiers .mid externes**, pas de step sequencer interne, pas d'événements MIDI inlinés dans le projet.
 9. **Audio = fichiers WAV/FLAC externes**, référencés par chemin relatif.
 10. **Pas de probabilité ni de variations** sur les notes ou les clips (hors MVP).
+11. **Sémantique de Stop hybride** (cf. §3.1) : hors boucle, coupe nette avec reprise à la section suivante ; pendant une boucle, sortie musicale en fin de passage, un second Stop coupant net.
+12. **Boucles illimitées jusqu'au Stop** — pas de compteur de répétitions. `LoopTail` est paramétré par `tail_length` (durée de la queue, relative à la fin de la section — reste valide si la section change de longueur).
+13. **Pas de `start_offset` sur les clips (MVP)** : tout clip démarre au début de sa section ; une entrée décalée se modélise en découpant la section en deux. Un champ optionnel restera ajoutable plus tard sans casser le format.
+14. **Fin de song dictée par le `on_end` de sa dernière section** : `Advance` enchaîne automatiquement sur la song suivante du setlist (changement de tempo et de signature instantané à la frontière), `Stop` attend Play. Pas de mécanisme dédié au niveau song.
+15. **Sample rate : exigence de match** avec la carte son. Refus au chargement du projet (jamais en cours de live) avec message explicite — fichier, rate attendu, rate trouvé. Pas de resampling à la volée en MVP.
+16. **Pas de time-stretching** : les fichiers audio sont calés au tempo de la song en amont.
+17. **Format du fichier projet : TOML** (également pour la configuration système, cf. [spec.md §4.3](spec.md#43-sorties-et-routing)).
 
-## 6. Questions ouvertes ❓
-
-Ces points doivent être tranchés avant de figer les types Rust de `ttyseq-core`.
-
-### 6.1 Sémantique exacte de Stop
-
-Quand le performeur appuie sur Stop pendant la lecture, deux scénarios possibles :
-
-- **Stop immédiat** : la lecture s'arrête net (sample-accurate). Re-Play reprend où ?
-  - Au début de la section courante ?
-  - Au début de la song ?
-  - À la section suivante ?
-- **Stop "fin de section"** : la lecture continue jusqu'à la fin de la section courante puis s'arrête. Re-Play reprend à la section suivante (sauf si la section était `Stop`, alors à la même).
-
-Pour du live électronique, **Stop immédiat avec reprise à la section suivante** semble le plus naturel : "je coupe parce que ça dérape, et je relance sur la suite". Mais à confirmer.
-
-### 6.2 Modalités de Loop
-
-Pour `LoopFull` et `LoopTail` :
-
-- Nombre de répétitions max : illimité jusqu'au Stop, ou compteur explicite ?
-- Pour `LoopTail`, le paramètre est-il `tail_length` (durée de la queue à boucler) ou `tail_start` (point dans la section où la boucle redémarre) ? Les deux représentations sont équivalentes mais l'une est peut-être plus intuitive.
-
-### 6.3 Offset des clips dans une section
-
-Un clip peut-il commencer **plus tard** que le début de la section ? Cas d'usage : faire entrer un instrument 4 beats après le début d'une section.
-
-- **Si oui** : ajouter un champ `start_offset: MusicalDuration` au clip
-- **Si non** : tous les clips démarrent strictement au début de la section ; pour décaler une entrée, on découpe en deux sections successives
-
-Le second est plus simple et probablement suffisant en MVP.
-
-### 6.4 Transitions entre songs
-
-Quand une song termine sa dernière section :
-
-- La song suivante du setlist démarre-t-elle automatiquement ?
-- Le tempo change-t-il instantanément, ou y a-t-il une transition ?
-- Faut-il un comportement explicite "fin de song" (équivalent du `SectionBehavior` mais au niveau song) ?
-
-Ma proposition : la dernière section d'une song dicte le comportement, via son `on_end`. Une song qui doit s'enchaîner en automatique se termine par une section `Advance` ; une song qui doit attendre une décision se termine par `Stop`.
-
-### 6.5 Sample rate des fichiers audio
-
-Si la carte son tourne à 48 kHz et qu'un fichier source est à 44.1 kHz :
-
-- **Resampling à la volée** : ttySeq adapte automatiquement (plus user-friendly)
-- **Exigence de match** : ttySeq refuse de charger ; le performeur convertit ses fichiers en amont (plus simple, plus performant, pas d'ambiguïté)
-
-Pour un MVP orienté performance et fiabilité, l'exigence de match semble préférable. Le performeur prépare son live, il sait à quelle fréquence il joue.
-
-### 6.6 Tempo des fichiers audio
-
-Si la song est à 128 BPM mais le fichier audio a été enregistré à 130 BPM :
-
-- **Time-stretching à la volée** : très complexe, coûteux, qualité variable
-- **Exigence de match** : le performeur prépare son fichier au bon tempo
-
-**Pas de time-stretching en MVP** semble évident. Le performeur cale ses fichiers en amont.
-
-## 7. Hors scope MVP (pour mémoire)
+## 6. Hors scope MVP (pour mémoire)
 
 Pour rappel, ces fonctionnalités ont été explicitement écartées du MVP :
 
 - Saut arbitraire entre sections en live (grid de navigation TUI) — *intéressant, mais plus tard*
 - Probabilité / variations sur les notes — *intéressant, mais plus tard*
 - Time-stretching audio — *complexité disproportionnée*
-- Resampling à la volée — *à reconsidérer après §6.5*
+- Resampling à la volée — *écarté du MVP au profit de l'exigence de match (cf. §5, décision 15) ; reconsidérable ensuite*
+- Offset de départ des clips dans une section (`start_offset`) — *écarté du MVP (cf. §5, décision 13)*
 - Plugins — *placeholder architectural uniquement*
 - CV output — *architectural, mais pas implémenté en MVP*
 - Track/clip de type « live » (flux d'événements externes timestampés, instrument live coding) — *documenté dans [spec.md §10](spec.md#10-risques-et-mitigation)*
@@ -226,9 +185,9 @@ Pour rappel, ces fonctionnalités ont été explicitement écartées du MVP :
 - Matrix routing — *direct track-to-output uniquement*
 - Tap tempo, Ableton Link, MIDI learn — *écarté définitivement*
 
-## 8. Représentation textuelle d'un projet (illustratif)
+## 7. Représentation textuelle d'un projet (illustratif)
 
-Pour donner une intuition concrète, voici à quoi pourrait ressembler un projet ttySeq exprimé en TOML — illustratif, non normatif à ce stade :
+Le format du fichier projet est le **TOML** ✅. L'exemple ci-dessous illustre la syntaxe — la grammaire exacte sera affinée en implémentant le parsing. Noter la contrainte TOML : les tables inline tiennent sur une seule ligne, d'où la sous-table `[songs.sections.clips]` quand une section a plusieurs clips :
 
 ```toml
 [metadata]
@@ -264,10 +223,10 @@ clips = { 1 = { type = "audio", file = "drums/intro.wav" } }
 name = "Drop"
 length = { bars = 16 }
 on_end = { type = "loop_tail", tail_length = { bars = 4 } }
-clips = {
-    1 = { type = "audio", file = "drums/drop.wav", playback = "loop" },
-    2 = { type = "midi", file = "bass/drop.mid", playback = "loop" }
-}
+
+[songs.sections.clips]
+1 = { type = "audio", file = "drums/drop.wav", playback = "loop" }
+2 = { type = "midi", file = "bass/drop.mid", playback = "loop" }
 
 [[songs.sections]]
 name = "Outro"
@@ -278,8 +237,8 @@ clips = { 1 = { type = "audio", file = "drums/outro.wav" } }
 setlist = [1]
 ```
 
-Cette représentation reste indicative — la syntaxe exacte sera affinée au moment d'implémenter `ttyseq-project`.
+Cette représentation reste indicative — la syntaxe exacte sera affinée au moment d'implémenter le parsing du projet.
 
 ---
 
-*Dernière mise à jour : avril 2026. Les questions §6 doivent être tranchées avant l'implémentation des types Rust de `ttyseq-core`.*
+*Dernière mise à jour : 18 août 2026. Toutes les questions ouvertes ont été tranchées ; les décisions sont récapitulées en §5. Les types Rust de `ttyseq-core` peuvent être figés.*
