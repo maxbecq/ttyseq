@@ -92,7 +92,7 @@ ttySeq adopte une architecture **client/serveur unifiée dans un binaire unique*
 - **Audio** : `cpal` (abstraction cross-platform : ALSA/PipeWire, CoreAudio)
 - **MIDI** : `midir`
 - **TUI** : `ratatui`
-- **Configuration** : `serde` + TOML ou YAML *(à trancher)*
+- **Configuration** : `serde` + TOML *(acté, cf. [data-model.md §5](data-model.md#5-décisions-actées-))*
 - **Thread priorité** : `thread-priority`
 - **IPC interne** : `std::sync::mpsc` ou `crossbeam-channel`, ring buffer lock-free `rtrb` pour le chemin audio
 - **IPC externe** : socket Unix natif (`std::os::unix::net`), OSC via `rosc` *(à confirmer)*
@@ -301,7 +301,7 @@ Une intégration plus profonde — track « live » dont le contenu est un flux 
 
 La configuration est séparée en deux fichiers distincts : la configuration du programme (audio backend, sorties physiques) et le fichier de projet (pistes, BPM, etc.).
 
-**Configuration système (`config.toml` / `config.yaml`) :**
+**Configuration système (`config.toml`) :**
 ```toml
 [audio]
 sample_rate = 48000
@@ -332,7 +332,7 @@ device = "crow"
 channels = [1, 2, 3, 4]
 ```
 
-**Fichier de projet (`project.toml` / `project.yaml`) :**
+**Fichier de projet (`project.toml`) :**
 ```toml
 [metadata]
 name = "My Live Set"
@@ -364,10 +364,10 @@ time_signature = [4, 4]
 name = "Intro"
 length = { bars = 8 }
 on_end = "advance"
-clips = {
-    1 = { type = "audio", file = "audio/kick_intro.wav" },
-    2 = { type = "midi", file = "midi/bass.mid", playback = "loop" }
-}
+
+[songs.sections.clips]
+1 = { type = "audio", file = "audio/kick_intro.wav" }
+2 = { type = "midi", file = "midi/bass.mid", playback = "loop" }
 
 setlist = [1]
 ```
@@ -490,7 +490,7 @@ plugins = []
 ### 5.1 Structure de fichier
 ```
 mon_set_live/
-├── project.toml          # Configuration principale (format à trancher)
+├── project.toml          # Configuration principale (TOML, acté)
 ├── audio/                # Fichiers audio (WAV/FLAC)
 │   ├── drums/
 │   │   ├── intro.wav
@@ -508,7 +508,7 @@ mon_set_live/
 
 Les sections sont définies **inline** dans le fichier projet, à l'intérieur de chaque song — pas dans des fichiers séparés (cf. [data-model.md §2.4](data-model.md#24-section--lunité-fondamentale-du-live)).
 
-### 5.2 Format de fichier projet (TOML ou YAML, à trancher)
+### 5.2 Format de fichier projet (TOML)
 ```toml
 [metadata]
 type = "ttyseq-project"
@@ -535,7 +535,7 @@ Le tempo et la signature rythmique sont définis **par song**, pas au niveau du 
 - [ ] Engine de playback audio basique
 - [ ] Séquenceur MIDI simple
 - [ ] Interface TUI minimale
-- [ ] Lecture de fichiers de projet (TOML ou YAML)
+- [ ] Lecture de fichiers de projet (TOML)
 - [ ] Sortie audio ALSA/JACK
 - [ ] Sortie MIDI basique
 - [ ] Routing direct piste → sortie physique
@@ -670,11 +670,11 @@ time_signature = [4, 4]
 name = "Drop"
 length = { bars = 16 }
 on_end = "advance"
-clips = {
-    1 = { type = "audio", file = "audio/drums.wav", playback = "loop" },
-    2 = { type = "audio", file = "audio/bass.wav", playback = "loop" },
-    3 = { type = "midi", file = "midi/lead.mid", playback = "loop" }
-}
+
+[songs.sections.clips]
+1 = { type = "audio", file = "audio/drums.wav", playback = "loop" }
+2 = { type = "audio", file = "audio/bass.wav", playback = "loop" }
+3 = { type = "midi", file = "midi/lead.mid", playback = "loop" }
 ```
 
 #### 2. Live band électronique — Pistes + click
@@ -709,10 +709,10 @@ time_signature = [4, 4]
 name = "Couplet 1"
 length = { bars = 16 }
 on_end = "advance"
-clips = {
-    1 = { type = "audio", file = "audio/click.wav", playback = "loop" },
-    2 = { type = "audio", file = "audio/bvox_v1.wav" }
-}
+
+[songs.sections.clips]
+1 = { type = "audio", file = "audio/click.wav", playback = "loop" }
+2 = { type = "audio", file = "audio/bvox_v1.wav" }
 ```
 
 #### 3. Prototype Eurorack/Hardware
@@ -747,9 +747,7 @@ time_signature = [4, 4]
 name = "Texture"
 length = { bars = 32 }
 on_end = "loop_full"
-clips = {
-    2 = { type = "audio", file = "audio/drone.wav", playback = "loop" }
-}
+clips = { 2 = { type = "audio", file = "audio/drone.wav", playback = "loop" } }
 ```
 
 ---
@@ -828,13 +826,13 @@ Topics architecturalement reconnus mais hors scope du MVP et de ses extensions i
 **ttySeq** est positionné pour combler un vide dans l'écosystème : un séquenceur musical complet, léger, fiable, orienté performance live, fonctionnant sur hardware minimal. Son architecture volontairement simple (pas de bus internes, pas de sends, routing direct) garantit stabilité et maintenabilité.
 
 **Next steps :**
-1. Prototyper le playback audio basique en Rust
-2. Tester la latence sur Raspberry Pi 4
-3. Trancher le format de fichier projet (TOML vs YAML)
+1. Implémenter le modèle de données et la machine à états de session (tests de scénario, sans audio)
+2. Prototyper le playback audio basique en Rust
+3. Tester la latence sur Raspberry Pi 4
 4. Développer le MVP TUI
 
 ---
 
-**Document version** : 1.5
+**Document version** : 1.6
 **Date** : 18 août 2026
 **Auteur** : Spécification collaborative

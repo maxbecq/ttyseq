@@ -18,7 +18,7 @@ se prépare ailleurs, ttySeq exécute de façon fiable et légère.
 Phase de **spécification + tout début d'implémentation**. La doc précède le code.
 Il n'y a pas encore de code source ni de découpage en crates matérialisé.
 La référence fait foi : `doc/spec/spec.md` (vue d'ensemble) et `doc/spec/data-model.md`
-(hiérarchie de données, comportements, décisions actées, questions ouvertes).
+(hiérarchie de données, comportements, décisions actées).
 
 Lire ces deux fichiers avant toute proposition d'architecture ou de code.
 
@@ -63,6 +63,8 @@ avant d'aller plus loin.
 
 ## Méthode de travail
 
+- **Processus de collaboration détaillé** (répartition des rôles, cycle de décision,
+  stratégie de test, fixtures) : `doc/dev-workflow.md`. Le lire avant de proposer du code.
 - **Spike avant abstraction** : valider par un prototype qui tourne avant de figer des interfaces.
   Une mauvaise abstraction verrouillée tôt coûte cher.
 - **Différer le découpage en crates** jusqu'à ce que les coutures émergent du code qui tourne.
@@ -75,11 +77,11 @@ avant d'aller plus loin.
 À l'état actuel des specs, restent ouverts — ne pas présupposer un choix :
 
 - **Licence** : GPL v3 vs MIT (cf. `spec.md §11`).
-- **Format de config** : TOML vs YAML.
 - **Format de sérialisation wire** externe : JSON vs MessagePack vs Bincode (cf. `spec.md §3.3.4`).
-- Questions ouvertes du modèle de données : `doc/spec/data-model.md §6`
-  (sémantique de Stop, modalités de Loop, offset des clips, transitions entre songs,
-  policy de sample rate et de tempo des fichiers audio).
+
+Les questions du modèle de données (Stop, Loop, offset des clips, transitions entre songs,
+sample rate, tempo) et le format projet/config (TOML) ont été tranchés le 18 août 2026 —
+cf. `doc/spec/data-model.md §5`.
 
 Si une décision sur un de ces points est nécessaire pour avancer, **le signaler explicitement**
 et proposer des options, sans trancher unilatéralement.
