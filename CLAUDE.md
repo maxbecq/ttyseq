@@ -15,18 +15,26 @@ se prépare ailleurs, ttySeq exécute de façon fiable et légère.
 
 ## État du projet
 
-Phase de **spécification + tout début d'implémentation**. La doc précède le code.
-Il n'y a pas encore de code source ni de découpage en crates matérialisé.
+Phase de **spécification terminée, implémentation à démarrer**. Toutes les questions du
+modèle de données sont tranchées (cf. `data-model.md §5`). Le code produit n'existe pas
+encore ; prochaine étape : squelette Cargo, types du modèle de données et durées musicales,
+puis machine à états de session — selon les rôles et la stratégie de test définis dans
+`doc/dev-workflow.md` et `doc/test-strategy.md`.
+
 La référence fait foi : `doc/spec/spec.md` (vue d'ensemble) et `doc/spec/data-model.md`
 (hiérarchie de données, comportements, décisions actées).
 
 Lire ces deux fichiers avant toute proposition d'architecture ou de code.
 
-Acquis validés dans un projet séparé (spike) :
+Acquis validés par le spike — code de référence figé dans `spikes/audio-path/`
+(cf. son README ; on y puise, on ne le fait pas évoluer ; à exclure du futur workspace Cargo) :
 
-- Le chemin audio temps réel (cpal + ring buffer lock-free, 2 threads).
-- L'utilisation des sources de Norns pour piloter l'écran du Norns Shield (boutons pas encore
-  testés), ce qui ouvre la voie à un « driver intégré » pour Norns Shield.
+- Le chemin audio temps réel (cpal + ring buffer lock-free `rtrb`) : 60 min / 0 underrun
+  sur Raspberry Pi 4.
+- Le pilotage de l'écran SSD1322 du Norns Shield (boutons et encodeurs pas encore testés).
+
+Spike différé, protocole prêt : validation Babyface Pro × Raspberry Pi en mode
+Class Compliant (`doc/spikes/babyface-raspi.md`).
 
 ## Architecture (cible)
 
