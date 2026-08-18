@@ -1,7 +1,5 @@
 # CLAUDE.md
 
-Contexte projet pour Claude Code. Lu à chaque session.
-
 ## Langue
 
 - **Dialogue avec l'utilisateur : français.**
@@ -15,8 +13,6 @@ conçu pour la **performance live** de musique électronique sur matériel à fa
 (Raspberry Pi, vieux ordinateurs). C'est un **instrument de scène, pas un DAW** : la composition
 se prépare ailleurs, ttySeq exécute de façon fiable et légère.
 
-Devise directrice : performance avant composition, fiabilité avant fonctionnalités.
-
 ## État du projet
 
 Phase de **spécification + tout début d'implémentation**. La doc précède le code.
@@ -25,21 +21,6 @@ La référence fait foi : `doc/spec/spec.md` (vue d'ensemble) et `doc/spec/data-
 (hiérarchie de données, comportements, décisions actées, questions ouvertes).
 
 Lire ces deux fichiers avant toute proposition d'architecture ou de code.
-
-## Modèle de données (décisions actées)
-
-- Hiérarchie à 4 niveaux : **Project → Song → Section → Clip**. Les **Tracks** sont des conduits
-  de sortie transverses, fixes pour tout le live.
-- Tempo et signature rythmique **par song**.
-- **Sections de durée fixe** ; les clips qui dépassent sont coupés net.
-- Transport à **une seule commande Play/Stop**, qui interagit avec le comportement de fin de
-  section pour produire tous les enchaînements.
-- Quatre comportements de fin de section : `Advance`, `Stop`, `LoopFull`, `LoopTail`.
-- **Avancement strictement séquentiel** en live (pas de saut arbitraire entre sections en MVP).
-- Le contenu musical est **externe et référencé par chemin** : MIDI = fichiers `.mid`,
-  audio = fichiers WAV/FLAC. Pas de step sequencer interne, pas d'événements inlinés dans le projet.
-
-Détail et justifications : `doc/spec/data-model.md`.
 
 ## Architecture (cible)
 
@@ -76,7 +57,7 @@ avant d'aller plus loin.
 
 ## Méthode de travail
 
-- **Spike avant abstraction** : valider le chemin audio temps réel réel (cpal + ring buffer, 2 threads)
+- **Spike avant abstraction** : valider le chemin audio temps réel (cpal + ring buffer, 2 threads)
   avant de figer des interfaces inter-crates. Une mauvaise abstraction verrouillée tôt coûte cher.
 - **Différer le découpage en crates** jusqu'à ce que les coutures émergent du code qui tourne.
 - Itérer : valider les décisions dans le dialogue avant de les écrire dans les specs.
