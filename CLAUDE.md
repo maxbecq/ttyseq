@@ -22,6 +22,12 @@ La référence fait foi : `doc/spec/spec.md` (vue d'ensemble) et `doc/spec/data-
 
 Lire ces deux fichiers avant toute proposition d'architecture ou de code.
 
+Acquis validés dans un projet séparé (spike) :
+
+- Le chemin audio temps réel (cpal + ring buffer lock-free, 2 threads).
+- L'utilisation des sources de Norns pour piloter l'écran du Norns Shield (boutons pas encore
+  testés), ce qui ouvre la voie à un « driver intégré » pour Norns Shield.
+
 ## Architecture (cible)
 
 - **Engine séquenceur** entouré d'une couche protocole ; un ou plusieurs **clients** s'y branchent
@@ -57,8 +63,8 @@ avant d'aller plus loin.
 
 ## Méthode de travail
 
-- **Spike avant abstraction** : valider le chemin audio temps réel (cpal + ring buffer, 2 threads)
-  avant de figer des interfaces inter-crates. Une mauvaise abstraction verrouillée tôt coûte cher.
+- **Spike avant abstraction** : valider par un prototype qui tourne avant de figer des interfaces.
+  Une mauvaise abstraction verrouillée tôt coûte cher.
 - **Différer le découpage en crates** jusqu'à ce que les coutures émergent du code qui tourne.
 - Itérer : valider les décisions dans le dialogue avant de les écrire dans les specs.
 - Instructions d'édition courtes et précises attendues ; appliquer les changements de spec
