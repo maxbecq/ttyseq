@@ -104,7 +104,9 @@ ttySeq adopte une architecture **client/serveur unifiée dans un binaire unique*
 
 ### 3.3 Architecture client/serveur et modes de lancement
 
-ttySeq est structuré comme un **engine séquenceur** entouré d'une couche protocole, à laquelle se branchent un ou plusieurs **clients** (TUI, CLI, intégrations externes type live coding). Le même vocabulaire de messages est utilisé en interne (entre threads, in-process) et en externe (entre processus, via socket ou OSC), avec une sérialisation appliquée uniquement quand un client distant est concerné.
+ttySeq est structuré comme un **engine séquenceur** entouré d'une couche protocole, à laquelle se branchent un ou plusieurs **clients**. Le même vocabulaire de messages est utilisé en interne (entre threads, in-process) et en externe (entre processus, via socket ou OSC), avec une sérialisation appliquée uniquement quand un client distant est concerné.
+
+Les clients se répartissent en trois familles : les **frontends humains** (TUI, CLI), les **surfaces de contrôle matérielles** (Norns Shield/Fates, Monome Grid, contrôleurs MIDI — cf. §3.3.7) et les **intégrations externes** (live coding, scripts — cf. §4.2.5).
 
 Cette structure permet de garder un binaire unique pour les usages simples et solo, tout en ouvrant la voie à des frontends variés (CLI, web, contrôleurs externes, scripts) sans réécrire le cœur.
 
@@ -156,6 +158,29 @@ L'engine peut être interrogé en **requête/réponse** (un client envoie une `E
 #### 3.3.6 Sync tempo : sujet distinct
 
 L'IPC décrite ici sert au **contrôle sémantique** : lancement de clips, transitions de sections, changements de transport, mutations d'état. Elle n'est pas conçue pour la synchronisation tempo à l'échantillon près. Les protocoles standards pour ce besoin (MIDI Clock, Ableton Link) sont à traiter séparément (cf. §4.6 et sujets différés en §10).
+
+#### 3.3.7 Surfaces de contrôle in-process et politique de chargement
+
+Les surfaces de contrôle matérielles (Shield/Fates, Grid, contrôleurs MIDI) sont des **adaptateurs** : elles traduisent les événements hardware en `EngineCommand`, et les `EngineEvent` en feedback (LEDs, écran). Ce sont des clients du protocole comme les autres.
+
+**Modèle in-process.** Les surfaces tournent dans le binaire unique : chaque surface est un thread dédié, client du protocole via MPSC, spawné au démarrage selon la configuration. Aucune surface ne touche au thread audio. L'intérêt sur scène est d'avoir un seul process à superviser (un seul service systemd, un seul point de défaillance). Et comme les surfaces ne parlent que le protocole (données pures), l'extraction ultérieure d'une surface vers un process séparé (socket Unix) resterait possible sans réécriture : in-process vs out-of-process est un détail de déploiement, pas d'architecture.
+
+Esquisse illustrative (non normative) :
+
+```rust
+trait Surface: Send {
+    fn run(self: Box<Self>, cmds: Sender<EngineCommand>, events: EventSubscription);
+}
+```
+
+**Politique de chargement.** Deux mécanismes complémentaires, et rien d'autre :
+
+- **Compile-time (cargo features)** pour le code spécifique à une plateforme — ex. une feature `norns-shield` (framebuffer + GPIO Linux) présente dans le build Raspberry Pi, absente du build macOS de développement.
+- **Runtime (configuration système)** pour l'activation : une section par surface (`[surface.shield]`, `[surface.grid]`, `[[surface.midi]]` avec fichier de mapping).
+
+Pas de chargement dynamique (`dlopen`) : Rust n'a pas d'ABI stable, et cette fragilité est inacceptable pour un instrument de scène.
+
+**Hotplug.** Les surfaces matérielles doivent tolérer la déconnexion/reconnexion : un contrôleur débranché puis rebranché en cours de live doit se réattacher sans intervention.
 
 ---
 
@@ -219,7 +244,7 @@ Le contenu musical (fichiers audio) est référencé dans les **clips** au nivea
 
 ### 4.2 Interfaces de contrôle
 
-Les interfaces décrites ci-dessous (TUI, Monome Grid, contrôleurs MIDI) sont toutes des **clients du protocole §3.3**. Elles ne dialoguent pas directement avec le routeur audio/MIDI : elles envoient des `EngineCommand` et reçoivent des `EngineEvent` via le transport approprié (MPSC in-process pour le TUI embarqué, socket Unix ou bus interne pour les autres). Cette uniformité permet d'ajouter de nouvelles interfaces sans modifier l'engine.
+Les interfaces décrites ci-dessous (TUI, Monome Grid, contrôleurs MIDI, surface Shield/Fates) sont toutes des **clients du protocole §3.3**. Elles ne dialoguent pas directement avec le routeur audio/MIDI : elles envoient des `EngineCommand` et reçoivent des `EngineEvent` via le transport approprié (MPSC in-process pour le TUI embarqué et les surfaces de contrôle, socket Unix ou OSC pour les clients externes). Les surfaces matérielles sont des adaptateurs in-process au sens de §3.3.7. Cette uniformité permet d'ajouter de nouvelles interfaces sans modifier l'engine.
 
 #### 4.2.1 Terminal (TUI)
 ```
@@ -247,10 +272,27 @@ Modes d'interface :
 - Mute/Solo de pistes
 - Patterns step sequencer
 - Feedback LED synchronisé
+- Dialogue via le démon `serialosc` : l'adaptateur grid est in-process côté ttySeq et communique avec serialosc en OSC
 
 #### 4.2.3 MIDI Controller
 - Mapping libre via fichier de configuration
 - Support CC/Notes/Program Change
+
+#### 4.2.4 Surface Norns Shield / Fates
+
+Écran OLED, encodeurs et boutons du hardware Norns Shield/Fates, utilisés comme **panneau avant alternatif au TUI** : affichage synchrone de l'état (song, section, transport) et contrôles directs. Architecturalement, c'est une surface de contrôle comme les autres (cf. §3.3.7), avec un feedback plus riche.
+
+- Compilée derrière la feature cargo `norns-shield` (framebuffer + GPIO, Linux/Raspberry Pi uniquement)
+- Acquis du spike : le pilotage de l'écran via les sources de Norns est validé ; boutons et encodeurs restent à tester
+
+#### 4.2.5 Instrument externe live coding
+
+Au-delà du contrôle de session (accessible à tout client OSC ou socket, cf. §3.3), un environnement de live coding (Haskell, SuperCollider…) peut fonctionner comme **instrument parallèle synchronisé** :
+
+- ttySeq est **maître de clock** : le process externe reçoit clock et transport (MIDI Clock, cf. §4.6 ; Ableton Link ou ticks OSC timestampés à terme, cf. §10)
+- Le process externe **sort sa musique lui-même** : MIDI directement vers le hardware, ou audio dans le graphe JACK vers le démon mixer (§4.4) — jamais via une entrée audio de ttySeq (§4.4.1)
+
+Une intégration plus profonde — track « live » dont le contenu est un flux d'événements musicaux timestampés routé par l'engine — est un sujet différé (cf. §10).
 
 
 ### 4.3 Sorties et Routing
@@ -438,7 +480,7 @@ plugins = []
 ### 4.6 Synchronisation
 
 - **Master Clock interne** : tempo défini par song (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist))
-- **MIDI Clock** : In/Out, master/slave
+- **MIDI Clock** : In/Out, master/slave — la sortie clock sert aussi à synchroniser des instruments externes type live coding (cf. §4.2.5)
 - **Ableton Link** *(sujet différé, hors MVP)* : intégration envisagée à terme pour la synchronisation tempo inter-applications avec des environnements de live coding (cf. §3.3.6 et §10)
 
 ---
@@ -512,6 +554,7 @@ Le tempo et la signature rythmique sont définis **par song**, pas au niveau du 
 - [ ] Support Monome Grid
 - [ ] MIDI mapping configurable
 - [ ] Feedback visuel (LED)
+- [ ] Surface Norns Shield/Fates (écran, encodeurs, boutons — feature `norns-shield`)
 
 ### Phase 4 : Sorties multicanaux et CV brut
 - [ ] Multi-sorties audio (canaux multiples par carte son)
@@ -748,6 +791,7 @@ Topics architecturalement reconnus mais hors scope du MVP et de ses extensions i
 
 - **Ableton Link** : synchronisation tempo inter-applications avec environnements de live coding (cf. §3.3.6, §4.6). Le besoin est réel pour l'intégration SuperCollider / TidalCycles / Sonic Pi en performance hybride, mais l'implémentation est différée pour ne pas alourdir le scope initial.
 - **Sync tempo à l'échantillon près** : au-delà de MIDI Clock et Ableton Link, des mécanismes plus fins (synchro via timestamps OSC, intégration JACK transport) pourront être étudiés selon les besoins de performance.
+- **Track live (instrument externe routé)** : track dont le contenu n'est pas un fichier mais un flux d'événements musicaux timestampés envoyé par un process externe (live coding, cf. §4.2.5) via OSC, ordonnancé par l'engine sur sa clock et joué sur la sortie de la track. L'instrument externe deviendrait une vraie track ttySeq (TUI, mute, sections). Nécessite une extension du protocole (événements musicaux timestampés, gestion du jitter par envoi anticipé des bundles, à la TidalCycles) et du modèle de données.
 
 ---
 
@@ -791,6 +835,6 @@ Topics architecturalement reconnus mais hors scope du MVP et de ses extensions i
 
 ---
 
-**Document version** : 1.4
-**Date** : 11 juin 2026
+**Document version** : 1.5
+**Date** : 18 août 2026
 **Auteur** : Spécification collaborative

@@ -221,6 +221,7 @@ Pour rappel, ces fonctionnalités ont été explicitement écartées du MVP :
 - Resampling à la volée — *à reconsidérer après §6.5*
 - Plugins — *placeholder architectural uniquement*
 - CV output — *architectural, mais pas implémenté en MVP*
+- Track/clip de type « live » (flux d'événements externes timestampés, instrument live coding) — *documenté dans [spec.md §10](spec.md#10-risques-et-mitigation)*
 - Bus internes, effets, sends auxiliaires — *écarté définitivement*
 - Matrix routing — *direct track-to-output uniquement*
 - Tap tempo, Ableton Link, MIDI learn — *écarté définitivement*
