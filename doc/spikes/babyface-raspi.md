@@ -7,11 +7,13 @@
 
 ## Contexte et risques connus
 
+- **Modèle concerné : Babyface Pro.**
 - **Pas de driver RME sous Linux.** La Babyface ne fonctionne sur Pi qu'en mode
-  **Class Compliant (CC)**. La procédure d'activation et les capacités exposées en
-  CC (nombre de canaux, sample rates) **dépendent du modèle** (Babyface 2010,
-  Babyface Pro, Pro FS) — vérifier le manuel RME du modèle exact et la version de
-  firmware avant tout.
+  **Class Compliant (CC)**. Sur la Babyface Pro, l'activation du mode CC se fait
+  sur l'appareil lui-même, sans ordinateur (chapitre « Class Compliant Operation »
+  du manuel RME — lire aussi ce qu'il dit du nombre de canaux et des sample rates
+  exposés en CC, à confronter aux étapes 4-5 du protocole). Vérifier la version de
+  firmware avant la session.
 - **Pas de TotalMix sous Linux.** Le routing/mixage interne doit être soit
   pré-configuré, soit piloté par les contrôles en façade (selon modèle). À évaluer :
   est-ce compatible avec un usage scène sans ordinateur de config ?
