@@ -46,7 +46,7 @@ noyau 6.18.39-rpt aarch64, Babyface Pro bus-powered directement sur le Pi.
 | 6 | Spike cpal | lancer le spike à buffer 1024, puis 512, 256, 128 | Pas de xrun audible ; noter le CPU (`top`) à chaque palier | ✅ Spike `spikes/babyface-cc/` (build debug), 48 kHz / 12 canaux, 60 s par palier : **0 underrun à 1024, 512, 256 et 128**. CPU ≈ 22-24 % d'un cœur à chaque palier. 0 xrun dmesg |
 | 7 | Stress | lecture continue 30 min à la config cible (48 kHz / 512) | Zéro xrun (`dmesg`, compteurs ALSA) | ✅ **30 min / 0 underrun** (48 kHz / 512 / 12 canaux, build debug), CPU stable ≈ 25 % d'un cœur, 0 xrun dmesg |
 | 8 | Hotplug | débrancher/rebrancher en cours de route | La carte réapparaît proprement (comportement à documenter pour la spec hotplug §3.3.7) | ✅ Débranchement en cours de lecture : le processus survit (pas de panic), le callback d'erreur cpal remonte proprement « buffer underrun » puis « device not available » puis « Device disconnected ». Rebranchement : la carte réapparaît au même index ALSA (carte 3) ; warnings dmesg bénins (« falling back to MIDI 1.0 », « unit 2 not found »). **Le flux cpal ne reprend pas tout seul : l'application doit détecter la disparition et rouvrir le device** — à intégrer dans la spec hotplug §3.3.7 |
-| 9 | (Option) Latence round-trip | JACK + `jack_iodelay` avec câble loopback sortie→entrée | Mesure réelle, à comparer à l'objectif < 10 ms | ⏸️ Différée : pas de câble de loopback disponible pendant la session |
+| 9 | (Option) Latence round-trip | JACK + `jack_iodelay` avec câble loopback sortie→entrée | Mesure réelle, à comparer à l'objectif < 10 ms | ✅ Session du 19/08, jackd 48 kHz / 3 périodes, 0 xrun à tous les paliers (sans même l'ordonnancement temps réel) : **43,5 ms** RT à buffer 512, **22,0 ms** à 256, **11,4 ms** à 128, **6,2 ms** à 64. Latence cachée matériel (convertisseurs + USB au-delà des buffers) : **33-39 frames ≈ 0,7-0,8 ms** seulement — la latence est dominée par les buffers logiciels |
 
 ## Critères de succès
 
@@ -82,4 +82,30 @@ Contraintes CC relevées, à documenter côté spec :
 - Hotplug : la carte réapparaît au même index, mais le flux cpal est
   irrécupérable — l'engine devra détecter la déconnexion (callback d'erreur)
   et rouvrir le device (spec §3.3.7).
-- Latence round-trip non mesurée (étape 9 différée, câble manquant).
+- Latence round-trip mesurée le 19/08 (étape 9, `jack_iodelay`, câble loopback) :
+  dominée par les buffers logiciels, latence cachée matériel ≈ 0,8 ms seulement.
+  L'objectif < 10 ms en sortie est tenu dès buffer 128 (≈ 8 ms de trajet aller à
+  3 périodes ; 11,4 ms round-trip mesurés). La config cible 48 kHz / 512 (spec §7)
+  reste pertinente pour la robustesse, mais la basse latence est validée en
+  stabilité — voir la session complémentaire ci-dessous.
+
+## Session complémentaire du 19/08/2026 — stabilité basse latence
+
+Suite à la mesure de latence (étape 9), validation de stabilité du spike cpal
+(`spikes/babyface-cc/`, build debug, 48 kHz / 12 canaux, sans priorité temps
+réel particulière) à petits buffers :
+
+| Buffer demandé | `hw_params` négociés | Durée | Underruns |
+|---|---|---|---|
+| 128 | period 128, buffer 256 (2 périodes) | 30 min | **0** |
+| 64 | period 64, buffer 128 | 30 min | **0** |
+| 32 (exploratoire) | period 32, buffer 64 | 15 min | **0** |
+| 96 (exploratoire) | period 96, buffer 192 | 15 min | **0** |
+
+0 xrun `dmesg` sur toute la session. ALSA honore exactement les tailles
+demandées, y compris 96 (multiple de la microtrame USB : 6 frames à 48 kHz).
+
+Conclusion : **le mode basse latence 48 kHz / 128 est validé 30 min sans
+underrun** (≈ 8 ms de sortie, sous l'objectif < 10 ms), avec une marge réelle
+en dessous (64 stable 30 min, 32 stable 15 min à ~0,67 ms par période). Les
+paliers 30 min valent validation ; les paliers 15 min sont indicatifs.
