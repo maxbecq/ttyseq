@@ -1,0 +1,12 @@
+[package]
+name = "ttyseq"
+version = "0.1.0"
+edition = "2024"
+publish = false
+# No `license` field yet: GPL v3 vs MIT is still an open question (doc/spec/spec.md §11).
+
+[workspace]
+# Spikes are frozen, standalone Cargo projects — never workspace members.
+exclude = ["spikes/audio-path", "spikes/babyface-cc"]
+
+[dependencies]
