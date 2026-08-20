@@ -2,7 +2,7 @@
 
 > Document de spécification pour `ttyseq-core` — la modélisation des données qui décrivent un projet de live.
 > 
-> Les décisions actées sont marquées ✅. Toutes les questions ouvertes ont été tranchées (18 août 2026) : ce document décrit l'état acté du modèle de données, récapitulé en §5.
+> Les décisions actées sont marquées ✅. Toutes les questions ouvertes ont été tranchées (18 août 2026) : ce document décrit l'état acté du modèle de données, récapitulé en §5. Décision 2 amendée le 20 août 2026 : tempo et signature deviennent des défauts de song, surchargeables par section.
 
 ---
 
@@ -62,14 +62,16 @@ Une track a :
 
 ### 2.3 Song — une chanson du setlist
 
-Une song correspond à un morceau du live. Elle a son propre tempo et sa propre signature rythmique.
+Une song correspond à un morceau du live. Elle définit le tempo et la signature rythmique **par défaut** de ses sections.
 
 Une song contient :
 
 - Un nom
-- Un tempo (BPM)
-- Une signature rythmique (4/4, 3/4…)
+- Un tempo (BPM) — défaut, surchargeable par section ✅
+- Une signature rythmique (4/4, 3/4…) — défaut, surchargeable par section ✅
 - Une liste **ordonnée** de sections
+
+Le BPM compte des **noires par minute**, quelle que soit la signature (convention DAW) : le tempo ressenti reste continu à travers un changement de signature.
 
 ### 2.4 Section — l'unité fondamentale du live
 
@@ -78,8 +80,9 @@ Une section est une **scène musicale** : un moment de la song où certaines tra
 Une section a :
 
 - Un nom (ex. "Intro", "Couplet 1", "Refrain")
-- Une **longueur musicale** (`length`) — exprimée en mesures ou beats
+- Une **longueur musicale** (`length`) — exprimée en mesures ou beats, résolue contre la signature effective de la section
 - Un **comportement de fin** (`on_end`) — voir §3
+- Un **tempo optionnel** et une **signature rythmique optionnelle**, qui surchargent les défauts de la song pour cette section ✅ — le changement est instantané et sample-accurate à la frontière de section
 - Une **collection de clips**, indexée par track : à chaque track active dans cette section correspond un clip
 
 **Une track sans clip dans une section est silencieuse pour cette section** (équivalent à `Empty`).
@@ -152,7 +155,7 @@ L'effet de Stop dépend du contexte de lecture :
 ## 5. Décisions actées ✅
 
 1. **Hiérarchie en 4 niveaux** : Project → Song → Section → Clip, avec les Tracks comme conduits transverses.
-2. **Tempo par song**, signature rythmique par song.
+2. **Tempo et signature rythmique : défaut par song, override optionnel par section** *(amendé le 20 août 2026 — initialement « par song » uniquement)*. Le tempo est constant à l'intérieur d'une section (par paliers) ; l'automation continue du tempo est hors scope, couplée au time-stretching (cf. §6). Le BPM compte des noires par minute quelle que soit la signature.
 3. **Sections de durée fixe** : la durée est une propriété explicite de la section, indépendante du contenu des clips.
 4. **Clips coupés net** s'ils dépassent la durée de la section.
 5. **Une seule commande de transport** Play/Stop, qui interagit avec `on_end` pour produire tous les comportements.
@@ -176,6 +179,7 @@ Pour rappel, ces fonctionnalités ont été explicitement écartées du MVP :
 - Saut arbitraire entre sections en live (grid de navigation TUI) — *intéressant, mais plus tard*
 - Probabilité / variations sur les notes — *intéressant, mais plus tard*
 - Time-stretching audio — *complexité disproportionnée*
+- Automation continue du tempo (courbes/rampes à la Ableton) — *sans time-stretch, la grille glisserait contre les stems audio imprimés à tempo fixe ; les deux sujets reviendront ensemble ou pas du tout. Le tempo par paliers de section (cf. §5, décision 2) couvre le besoin en MVP*
 - Resampling à la volée — *écarté du MVP au profit de l'exigence de match (cf. §5, décision 15) ; reconsidérable ensuite*
 - Offset de départ des clips dans une section (`start_offset`) — *écarté du MVP (cf. §5, décision 13)*
 - Plugins — *placeholder architectural uniquement*
@@ -210,8 +214,8 @@ channel = 1
 [[songs]]
 id = 1
 name = "Opener"
-tempo = 128.0
-time_signature = [4, 4]
+tempo = 128.0            # defaults for the song's sections
+time_signature = [4, 4]  # overridable per section
 
 [[songs.sections]]
 name = "Intro"
@@ -230,7 +234,9 @@ on_end = { type = "loop_tail", tail_length = { bars = 4 } }
 
 [[songs.sections]]
 name = "Outro"
-length = { bars = 4 }
+tempo = 96.0             # per-section overrides
+time_signature = [7, 8]
+length = { bars = 4 }    # 4 bars of 7/8
 on_end = "stop"
 clips = { 1 = { type = "audio", file = "drums/outro.wav" } }
 
@@ -241,4 +247,4 @@ Cette représentation reste indicative — la syntaxe exacte sera affinée au mo
 
 ---
 
-*Dernière mise à jour : 18 août 2026. Toutes les questions ouvertes ont été tranchées ; les décisions sont récapitulées en §5. Les types Rust de `ttyseq-core` peuvent être figés.*
+*Dernière mise à jour : 20 août 2026 (décision 2 amendée : tempo et signature par section). Toutes les questions ouvertes ont été tranchées ; les décisions sont récapitulées en §5. Les types Rust de `ttyseq-core` peuvent être figés.*

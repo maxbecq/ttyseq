@@ -214,8 +214,8 @@ Une track est un **conduit de sortie**, défini une fois pour tout le projet. El
 
 Le projet suit une hiérarchie en 4 niveaux : **Project → Song → Section → Clip**, avec les tracks comme conduits transverses (cf. [data-model.md §2](data-model.md#2-hiérarchie)).
 
-- Chaque **song** a son propre tempo (BPM) et sa signature rythmique
-- Chaque **section** a une durée fixe (en mesures/beats) et un comportement de fin (`Advance`, `Stop`, `LoopFull`, `LoopTail`)
+- Chaque **song** définit le tempo (BPM) et la signature rythmique par défaut de ses sections
+- Chaque **section** a une durée fixe (en mesures/beats), un comportement de fin (`Advance`, `Stop`, `LoopFull`, `LoopTail`), et peut surcharger le tempo et la signature de la song
 - Chaque **clip** est un pointeur vers un fichier externe (audio ou MIDI), joué sur une track dans une section
 
 #### Routing audio
@@ -353,7 +353,7 @@ type = "midi"
 output = { type = "device", name = "TR-8S" }
 channel = 1
 
-# Tempo et signature par song
+# Tempo et signature : défauts de la song, surchargeables par section
 [[songs]]
 id = 1
 name = "Opener"
@@ -479,7 +479,7 @@ plugins = []
 
 ### 4.6 Synchronisation
 
-- **Master Clock interne** : tempo défini par song (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist))
+- **Master Clock interne** : tempo défini par song, surchargeable par section (cf. [data-model.md §2.3–2.4](data-model.md#23-song--une-chanson-du-setlist))
 - **MIDI Clock** : In/Out, master/slave — la sortie clock sert aussi à synchroniser des instruments externes type live coding (cf. §4.2.5)
 - **Ableton Link** *(sujet différé, hors MVP)* : intégration envisagée à terme pour la synchronisation tempo inter-applications avec des environnements de live coding (cf. §3.3.6 et §10)
 
@@ -525,7 +525,7 @@ master_volume = 1.0
 mode = "internal"  # internal, midi_clock
 ```
 
-Le tempo et la signature rythmique sont définis **par song**, pas au niveau du projet (cf. [data-model.md §2.3](data-model.md#23-song--une-chanson-du-setlist)).
+Le tempo et la signature rythmique sont définis **par song** (comme défauts, surchargeables par section — cf. [data-model.md §2.3–2.4](data-model.md#23-song--une-chanson-du-setlist)), pas au niveau du projet.
 
 ---
 
@@ -833,6 +833,6 @@ Topics architecturalement reconnus mais hors scope du MVP et de ses extensions i
 
 ---
 
-**Document version** : 1.6
-**Date** : 18 août 2026
+**Document version** : 1.7
+**Date** : 20 août 2026
 **Auteur** : Spécification collaborative
