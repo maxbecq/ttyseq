@@ -7,6 +7,13 @@ pub struct TimeSignature {
     pub denominator: u8,
 }
 
+impl TimeSignature {
+    /// Ticks per beat, a beat being one unit of the denominator.
+    pub fn ticks_per_beat(&self) -> u32 {
+        INTERNAL_PPQN * 4 / u32::from(self.denominator)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub struct Tempo(pub f64);
 
@@ -56,13 +63,6 @@ impl BeatGrid {
     }
 }
 
-impl TimeSignature {
-    /// Ticks per beat, a beat being one unit of the denominator.
-    pub fn ticks_per_beat(&self) -> u32 {
-        INTERNAL_PPQN * 4 / u32::from(self.denominator)
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -73,6 +73,75 @@ mod tests {
         assert_eq!(
             grid.frame_at_ticks(u64::from(INTERNAL_PPQN), INTERNAL_PPQN),
             Frames(24_000)
+        );
+    }
+
+    #[test]
+    fn a_beat_follows_the_signature_denominator() {
+        let four_four = TimeSignature {
+            numerator: 4,
+            denominator: 4,
+        };
+        let seven_eight = TimeSignature {
+            numerator: 7,
+            denominator: 8,
+        };
+        assert_eq!(four_four.ticks_per_beat(), INTERNAL_PPQN);
+        assert_eq!(seven_eight.ticks_per_beat(), INTERNAL_PPQN / 2);
+    }
+
+    #[test]
+    fn bar_length_in_beats_depends_on_signature() {
+        let four_four = TimeSignature {
+            numerator: 4,
+            denominator: 4,
+        };
+        let seven_eight = TimeSignature {
+            numerator: 7,
+            denominator: 8,
+        };
+        assert_eq!(MusicalLength::Bars(1).in_beats(four_four), 4);
+        assert_eq!(MusicalLength::Bars(1).in_beats(seven_eight), 7);
+        assert_eq!(MusicalLength::Beats(4).in_beats(four_four), 4);
+        assert_eq!(MusicalLength::Beats(4).in_beats(seven_eight), 4);
+    }
+
+    #[test]
+    fn bar_count_multiplies_the_beats() {
+        let seven_eight = TimeSignature {
+            numerator: 7,
+            denominator: 8,
+        };
+        assert_eq!(MusicalLength::Bars(2).in_beats(seven_eight), 14);
+    }
+
+    #[test]
+    fn a_seven_eight_bar_is_three_and_a_half_quarters() {
+        let seven_eight = TimeSignature {
+            numerator: 7,
+            denominator: 8,
+        };
+        assert_eq!(
+            MusicalLength::Bars(1).in_ticks(seven_eight),
+            u64::from(INTERNAL_PPQN) * 7 / 2
+        );
+    }
+
+    #[test]
+    fn position_does_not_drift_after_a_thousand_bars() {
+        let four_four = TimeSignature {
+            numerator: 4,
+            denominator: 4,
+        };
+        let grid = BeatGrid::new(Tempo(127.0), SampleRate(48_000));
+        let ticks: u64 = MusicalLength::Bars(1000).in_ticks(four_four);
+        let frame_value: f64 = 48_000.0 * 60.0 * 4.0 * 1000.0 / 127.0;
+        // u64 -> f64 is lossy above 2^53; our values stay six orders of magnitude below.
+        let frame_at_tick_position = grid.frame_at_ticks(ticks, INTERNAL_PPQN).0 as f64;
+        let drift = (frame_at_tick_position - frame_value).abs();
+        assert!(
+            drift < 1.0,
+            "drift of {drift} frames after 1000 bars, expected < 1"
         );
     }
 }
